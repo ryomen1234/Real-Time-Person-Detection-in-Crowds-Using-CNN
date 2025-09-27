@@ -1,1 +1,1 @@
-
+A deep learning project that uses Convolutional Neural Networks (CNN) for detecting persons in crowded environments. The model is trained to identify and localize individuals within dense gatherings, enabling applications in surveillance, safety monitoring, and crowd management.
