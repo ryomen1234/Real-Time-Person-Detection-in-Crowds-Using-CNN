@@ -177,6 +177,7 @@ class ApiService {
     email: string;
     password: string;
     role: 'admin' | 'teacher' | 'student';
+    prn?: string;
   }): Promise<User> {
     const response = await fetch(`${API_BASE_URL}/users`, {
       method: 'POST',

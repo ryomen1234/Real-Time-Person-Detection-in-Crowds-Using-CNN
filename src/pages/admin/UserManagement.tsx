@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,7 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit2, Trash2, Search, Users } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Users, Camera, Check } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import type { User, UserRole } from '@/contexts/AuthContext';
 import { apiService } from '@/services/api';
 
@@ -17,22 +18,26 @@ interface UserFormData {
   password: string;
   confirmPassword: string;
   role: UserRole;
+  prn?: string;
 }
 
 const UserManagement: React.FC = () => {
   const { toast } = useToast();
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [uploadingFaceFor, setUploadingFaceFor] = useState<number | null>(null);
+  const faceInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState<UserFormData>({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
-    role: 'student'
+    role: 'student',
+    prn: ''
   });
 
   // Load users on component mount
@@ -44,13 +49,7 @@ const UserManagement: React.FC = () => {
     try {
       setIsLoading(true);
       const fetchedUsers = await apiService.getUsers({ search: searchTerm });
-      const convertedUsers: User[] = fetchedUsers.map(user => ({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      }));
-      setUsers(convertedUsers);
+      setUsers(fetchedUsers);
     } catch (error) {
       toast({
         title: "Error",
@@ -59,6 +58,63 @@ const UserManagement: React.FC = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRegisterFace = async (userId: number, file: File) => {
+    try {
+      setUploadingFaceFor(userId);
+      
+      // Create FormData
+      const formData = new FormData();
+      formData.append('img', file);
+      
+      // Call API
+      const response = await fetch(`http://localhost:8000/api/students/${userId}/register-face`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        },
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to register face');
+      }
+      
+      toast({
+        title: "Success",
+        description: "Face registered successfully! Student can now be detected in group photos.",
+      });
+      
+      // Reload users to update face_registered status
+      loadUsers();
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to register face",
+        variant: "destructive"
+      });
+    } finally {
+      setUploadingFaceFor(null);
+    }
+  };
+
+  const triggerFaceUpload = (userId: number) => {
+    setUploadingFaceFor(userId);
+    if (faceInputRef.current) {
+      faceInputRef.current.click();
+    }
+  };
+
+  const handleFaceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && uploadingFaceFor) {
+      handleRegisterFace(uploadingFaceFor, file);
+    }
+    // Reset input
+    if (faceInputRef.current) {
+      faceInputRef.current.value = '';
     }
   };
 
@@ -110,7 +166,8 @@ const UserManagement: React.FC = () => {
           name: formData.name,
           email: formData.email,
           password: formData.password,
-          role: formData.role
+          role: formData.role,
+          prn: formData.role === 'student' ? formData.prn : undefined
         });
         
         toast({
@@ -132,14 +189,15 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const handleEdit = (user: User) => {
+  const handleEdit = (user: any) => {
     setEditingUser(user);
     setFormData({
       name: user.name,
       email: user.email,
       password: '',
       confirmPassword: '',
-      role: user.role
+      role: user.role,
+      prn: user.prn || ''
     });
     setIsDialogOpen(true);
   };
@@ -172,7 +230,8 @@ const UserManagement: React.FC = () => {
       email: '',
       password: '',
       confirmPassword: '',
-      role: 'student'
+      role: 'student',
+      prn: ''
     });
   };
 
@@ -192,6 +251,15 @@ const UserManagement: React.FC = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto p-6">
+        {/* Hidden file input for face registration */}
+        <input
+          ref={faceInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFaceFileChange}
+          className="hidden"
+        />
+        
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <Users className="h-8 w-8 text-primary" />
@@ -253,6 +321,18 @@ const UserManagement: React.FC = () => {
                         required
                       />
                     </div>
+                    
+                    {formData.role === 'student' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="prn">PRN / Student ID</Label>
+                        <Input
+                          id="prn"
+                          value={formData.prn || ''}
+                          onChange={(e) => setFormData({...formData, prn: e.target.value})}
+                          placeholder="e.g., PRN001"
+                        />
+                      </div>
+                    )}
                     
                     <div className="space-y-2">
                       <Label htmlFor="password">Password</Label>
@@ -321,6 +401,7 @@ const UserManagement: React.FC = () => {
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Face Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -334,8 +415,34 @@ const UserManagement: React.FC = () => {
                         {user.role}
                       </span>
                     </TableCell>
+                    <TableCell>
+                      {user.role === 'student' && (
+                        user.face_registered ? (
+                          <Badge className="bg-green-500 hover:bg-green-600">
+                            <Check className="h-3 w-3 mr-1" />
+                            Registered
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Not Registered
+                          </Badge>
+                        )
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        {user.role === 'student' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => triggerFaceUpload(user.id)}
+                            disabled={uploadingFaceFor === user.id}
+                            className="flex items-center gap-1"
+                          >
+                            <Camera className="h-3 w-3" />
+                            {uploadingFaceFor === user.id ? 'Uploading...' : 'Register Face'}
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
